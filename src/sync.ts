@@ -7,7 +7,7 @@ import {
 	extractTargets,
 	hasLinkTo,
 } from "./wikilink-utils";
-import { readFieldWikilinks, splitFrontmatter, updateFieldInContent } from "./yaml-utils";
+import { readFieldWikilinks, splitFrontmatter, updateFieldInContent, yamlHasTagsField } from "./yaml-utils";
 import { getFrontmatterTags, getFrontmatterValue } from "./frontmatter-utils";
 
 function extractFileTags(metadataCache: MetadataCache, file: TFile): string[] {
@@ -229,11 +229,7 @@ export async function applyChanges(
 				// e.g., Person.md's "Mail" field links here → add tag "Mail"
 				const split = splitFrontmatter(result);
 				if (split) {
-					const yamlStr = split.yaml;
-					const hasTagsField = yamlStr.split("\n").some(
-						(line) => line.startsWith("tags:") || line.startsWith("tags :")
-					);
-					if (!hasTagsField) {
+					if (!yamlHasTagsField(split.yaml)) {
 						for (const [, m] of fieldMods) {
 							if (m.autoTag) {
 								result = result.replace(

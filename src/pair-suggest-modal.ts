@@ -1,58 +1,22 @@
-import { App, Modal, Setting } from "obsidian";
+import { App, Modal, Platform, Setting } from "obsidian";
 import { RelationPair } from "./types";
 import { RelationCache } from "./cache";
 import { t } from "./i18n";
-import { getFrontmatterKeys, getFrontmatterTags } from "./frontmatter-utils";
+import {
+	PropertyRelationModal,
+	collectExistingFields,
+	collectExistingTags,
+} from "./relation-pair-flow";
 
 export interface PairSuggestResult {
 	action: "save" | "ignore" | "remove";
 	counterpartField?: string;
 	counterpartTag?: string;
 	sourceTag?: string;
-}
-
-const SYSTEM_FIELDS = new Set([
-	"title",
-	"aliases",
-	"tags",
-	"cssclasses",
-	"publish",
-	"permalink",
-	"description",
-	"image",
-	"cover",
-	"banner",
-	"date",
-	"created",
-	"updated",
-	"modified",
-	"position",
-]);
-
-function collectExistingFields(app: App, excludeField: string): string[] {
-	const fieldSet = new Set<string>();
-	const files = app.vault.getMarkdownFiles();
-	for (const file of files) {
-		const fm = app.metadataCache.getFileCache(file)?.frontmatter;
-		for (const key of getFrontmatterKeys(fm)) {
-			if (SYSTEM_FIELDS.has(key.toLowerCase())) continue;
-			if (key === excludeField) continue;
-			fieldSet.add(key);
-		}
-	}
-	return Array.from(fieldSet).sort();
-}
-
-function collectExistingTags(app: App): string[] {
-	const tagSet = new Set<string>();
-	const files = app.vault.getMarkdownFiles();
-	for (const file of files) {
-		const fm = app.metadataCache.getFileCache(file)?.frontmatter;
-		for (const tag of getFrontmatterTags(fm)) {
-			tagSet.add(tag);
-		}
-	}
-	return Array.from(tagSet).sort();
+	/** For "remove": the exact pair the user clicked (same object reference
+	 *  as in settings.pairs) — pairs sharing field names but different tags
+	 *  must not be removed together. */
+	pair?: RelationPair;
 }
 
 export class PairSuggestModal extends Modal {
@@ -130,7 +94,7 @@ export class PairSuggestModal extends Modal {
 				const counterpart = pair.fieldA === this.fieldName ? pair.fieldB : pair.fieldA;
 				const deleteBtn = row.createEl("button", { cls: "ybr-delete-btn", text: "×" });
 				deleteBtn.addEventListener("click", () => {
-					this.resolve({ action: "remove", counterpartField: counterpart });
+					this.resolve({ action: "remove", counterpartField: counterpart, pair });
 					this.close();
 				});
 			}
@@ -325,6 +289,13 @@ export function showPairSuggestModal(
 				resolve(result);
 			}
 		};
-		new PairSuggestModal(app, fieldName, fileName, existingPairs, sourceTags, pageFields, wrappedResolve).open();
+		// Phones get the native-style two-screen flow (user mockup);
+		// desktop and tablet keep the existing modal. Same result
+		// contract either way — main.ts wiring is identical.
+		if (Platform.isPhone) {
+			new PropertyRelationModal(app, fieldName, fileName, existingPairs, sourceTags, pageFields, wrappedResolve).open();
+		} else {
+			new PairSuggestModal(app, fieldName, fileName, existingPairs, sourceTags, pageFields, wrappedResolve).open();
+		}
 	});
 }

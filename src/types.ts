@@ -9,6 +9,7 @@ export interface PluginSettings {
 	pairs: RelationPair[];
 	autoSync: boolean;
 	useDisplayName: boolean;
+	showRibbonSyncButton: boolean;
 	debug: boolean;
 }
 
@@ -16,6 +17,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	pairs: [],
 	autoSync: true,
 	useDisplayName: false,
+	showRibbonSyncButton: true,
 	debug: false,
 };
 

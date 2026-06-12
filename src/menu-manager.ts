@@ -14,6 +14,7 @@ export default class MenuManager {
 	private menu: Menu | null = null;
 	private queuedActions: Array<() => void> = [];
 	private originalShowAtPosition: ShowAtPosition;
+	private patchedShowAtPosition: ShowAtPosition;
 
 	constructor() {
 		const originalShowAtPosition = Reflect.get(Menu.prototype, "showAtPosition") as unknown;
@@ -23,7 +24,7 @@ export default class MenuManager {
 		this.originalShowAtPosition = originalShowAtPosition as ShowAtPosition;
 		const getManager = () => this;
 
-		Menu.prototype.showAtPosition = function (
+		this.patchedShowAtPosition = function (
 			this: Menu,
 			position: MenuPositionDef,
 			doc?: Document
@@ -35,6 +36,7 @@ export default class MenuManager {
 			}
 			return manager.originalShowAtPosition.call(this, position, doc) as Menu;
 		};
+		Menu.prototype.showAtPosition = this.patchedShowAtPosition;
 	}
 
 	private runQueuedActions(): void {
@@ -63,7 +65,12 @@ export default class MenuManager {
 	}
 
 	restore(): void {
-		Menu.prototype.showAtPosition = this.originalShowAtPosition;
+		// Only restore if our patch is still the active one. Another plugin
+		// (e.g. Iconic, Pretty Properties) may have wrapped showAtPosition
+		// after us — resetting to our saved original would wipe its patch.
+		if (Menu.prototype.showAtPosition === this.patchedShowAtPosition) {
+			Menu.prototype.showAtPosition = this.originalShowAtPosition;
+		}
 		this.closeAndFlush();
 	}
 }

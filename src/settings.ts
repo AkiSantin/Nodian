@@ -1,50 +1,13 @@
-import { App, ButtonComponent, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, ButtonComponent, Platform, PluginSettingTab, Setting } from "obsidian";
 import type YBRPlugin from "./main";
-import { fullSync } from "./sync";
+import { RelationPair } from "./types";
 import { t } from "./i18n";
-import { getFrontmatterKeys, getFrontmatterTags } from "./frontmatter-utils";
-
-const SYSTEM_FIELDS = new Set([
-	"title",
-	"aliases",
-	"tags",
-	"cssclasses",
-	"publish",
-	"permalink",
-	"description",
-	"image",
-	"cover",
-	"banner",
-	"date",
-	"created",
-	"updated",
-	"modified",
-	"position",
-]);
-
-function collectExistingTags(app: App): string[] {
-	const tagSet = new Set<string>();
-	const files = app.vault.getMarkdownFiles();
-	for (const file of files) {
-		const fm = app.metadataCache.getFileCache(file)?.frontmatter;
-		for (const tag of getFrontmatterTags(fm)) {
-			tagSet.add(tag);
-		}
-	}
-	return Array.from(tagSet).sort();
-}
-
-function collectExistingFields(app: App): string[] {
-	const fieldSet = new Set<string>();
-	const files = app.vault.getMarkdownFiles();
-	for (const file of files) {
-		const fm = app.metadataCache.getFileCache(file)?.frontmatter;
-		for (const key of getFrontmatterKeys(fm)) {
-			if (!SYSTEM_FIELDS.has(key.toLowerCase())) fieldSet.add(key);
-		}
-	}
-	return Array.from(fieldSet).sort();
-}
+import {
+	collectExistingFields,
+	collectExistingTags,
+	renderPairCard,
+	showRelationPairEditModal,
+} from "./relation-pair-flow";
 
 export class YBRSettingTab extends PluginSettingTab {
 	plugin: YBRPlugin;
@@ -90,6 +53,17 @@ export class YBRSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName(t("settings.showRibbonSyncButton"))
+			.setDesc(t("settings.showRibbonSyncButton.desc"))
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.showRibbonSyncButton).onChange((value) => {
+					this.plugin.settings.showRibbonSyncButton = value;
+					this.plugin.updateRibbonSyncButton();
+					void this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
 			.setName(t("settings.debug"))
 			.setDesc(t("settings.debug.desc"))
 			.addToggle((toggle) =>
@@ -99,7 +73,34 @@ export class YBRSettingTab extends PluginSettingTab {
 				})
 			);
 
-		new Setting(containerEl).setName(t("settings.relationPairs")).setHeading();
+		const pairsHeading = new Setting(containerEl).setName(t("settings.relationPairs")).setHeading();
+
+		if (Platform.isPhone) {
+			// Phone: card list (mockup vocabulary) with pencil / trash, and
+			// a plus button on the heading that opens the add/edit modal.
+			// Desktop and tablet keep the inline rows below unchanged.
+			const pairsContainer = containerEl.createDiv();
+			const renderPhonePairs = () => {
+				pairsContainer.empty();
+				const list = pairsContainer.createDiv({ cls: "ybr-pair-list" });
+				for (const pair of this.plugin.settings.pairs) {
+					renderPairCard(list, pair, {
+						sourceLabel: t("modal.sourceProperty"),
+						targetLabel: t("modal.targetProperty"),
+						onEdit: () => void this.editPairViaModal(pair, renderPhonePairs),
+						onDelete: () => void this.removePairObject(pair, renderPhonePairs),
+					});
+				}
+			};
+			pairsHeading.addExtraButton((button) => {
+				button
+					.setIcon("plus")
+					.setTooltip(t("settings.addPair"))
+					.onClick(() => void this.addPairViaModal(renderPhonePairs));
+			});
+			renderPhonePairs();
+			return;
+		}
 
 		const tags = collectExistingTags(this.app);
 		const fields = collectExistingFields(this.app);
@@ -196,16 +197,8 @@ export class YBRSettingTab extends PluginSettingTab {
 		btn.setDisabled(true);
 		btn.setButtonText("...");
 		try {
-			const count = await fullSync(
-				this.app.vault,
-				this.app.metadataCache,
-				this.plugin.cache,
-				this.plugin.getActivePairs(),
-				this.plugin.syncing,
-				this.plugin.settings.debug,
-				this.plugin.settings.useDisplayName
-			);
-			new Notice(t("notice.syncComplete", String(count)));
+			// Same plugin method as the command palette and the ribbon button.
+			await this.plugin.runFullSync();
 		} finally {
 			btn.setDisabled(false);
 			btn.setButtonText(t("settings.fullSync.button"));
@@ -216,6 +209,29 @@ export class YBRSettingTab extends PluginSettingTab {
 		await this.plugin.saveSettings();
 		this.plugin.rebuildCache();
 		afterSave?.();
+	}
+
+	private async addPairViaModal(rerender: () => void): Promise<void> {
+		const created = await showRelationPairEditModal(this.app, null);
+		if (!created) return;
+		this.plugin.settings.pairs.push(created);
+		await this.saveSettingsAndRebuild(rerender);
+	}
+
+	private async editPairViaModal(pair: RelationPair, rerender: () => void): Promise<void> {
+		const updated = await showRelationPairEditModal(this.app, pair);
+		if (!updated) return;
+		const index = this.plugin.settings.pairs.indexOf(pair);
+		if (index === -1) return;
+		this.plugin.settings.pairs[index] = updated;
+		await this.saveSettingsAndRebuild(rerender);
+	}
+
+	private async removePairObject(pair: RelationPair, rerender: () => void): Promise<void> {
+		const index = this.plugin.settings.pairs.indexOf(pair);
+		if (index === -1) return;
+		this.plugin.settings.pairs.splice(index, 1);
+		await this.saveSettingsAndRebuild(rerender);
 	}
 
 	private async saveSettings(afterSave?: () => void): Promise<void> {

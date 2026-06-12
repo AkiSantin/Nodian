@@ -1,15 +1,16 @@
-import { Notice, Plugin, TFile } from "obsidian";
+import { Notice, Plugin, TFile, addIcon } from "obsidian";
 import { DEFAULT_SETTINGS, PluginSettings, RelationPair, isCompletePair } from "./types";
 import { RelationCache } from "./cache";
 import { YBRSettingTab } from "./settings";
 import { detectChanges, applyChanges, fullSync } from "./sync";
 import { resolveDisplayName } from "./display-name";
 import { buildWikilink, extractTargets, hasLinkTo } from "./wikilink-utils";
-import { readFieldWikilinks, splitFrontmatter, updateFieldInContent } from "./yaml-utils";
+import { readFieldWikilinks, splitFrontmatter, updateFieldInContent, yamlHasTagsField } from "./yaml-utils";
 import { showPairSuggestModal } from "./pair-suggest-modal";
 import { t } from "./i18n";
 import MenuManager from "./menu-manager";
 import { getFrontmatterKeys, getFrontmatterTags, getFrontmatterValue, isRecord } from "./frontmatter-utils";
+import { NODIAN_SYNC_ICON, NODIAN_SYNC_ICON_ID } from "./icons";
 
 function extractYaml(content: string): string {
 	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -49,6 +50,7 @@ export default class YBRPlugin extends Plugin {
 	private debounceTimers: Map<string, number> = new Map();
 	private layoutReady = false;
 	private menuManager!: MenuManager;
+	private ribbonSyncEl: HTMLElement | null = null;
 
 	/** Frontmatter fields that should never show the relation button */
 	private static SYSTEM_FIELDS = new Set([
@@ -59,29 +61,23 @@ export default class YBRPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+		addIcon(NODIAN_SYNC_ICON_ID, NODIAN_SYNC_ICON);
 
 		// Initialize menu manager — intercepts Obsidian's native menus
 		this.menuManager = new MenuManager();
 
 		this.addSettingTab(new YBRSettingTab(this.app, this));
 
-		// Register command: full sync
+		// Register command: full sync (same method as ribbon + settings)
 		this.addCommand({
 			id: "sync-all-bidirectional-relations",
 			name: t("cmd.syncAll"),
 			callback: async () => {
-				const count = await fullSync(
-					this.app.vault,
-					this.app.metadataCache,
-					this.cache,
-					this.getActivePairs(),
-					this.syncing,
-					this.settings.debug,
-					this.settings.useDisplayName
-				);
-				new Notice(t("notice.syncComplete", String(count)));
+				await this.runFullSync();
 			},
 		});
+
+		this.updateRibbonSyncButton();
 
 		// Build cache when layout is ready (vault files are loaded)
 		this.app.workspace.onLayoutReady(() => {
@@ -170,6 +166,7 @@ export default class YBRPlugin extends Plugin {
 
 	onunload() {
 		this.menuManager.restore();
+		this.removeRibbonSyncButton();
 		// Clear all debounce timers
 		for (const timer of this.debounceTimers.values()) {
 			window.clearTimeout(timer);
@@ -192,6 +189,7 @@ export default class YBRPlugin extends Plugin {
 			pairs: normalizedPairs.map((item) => item.pair),
 			autoSync: readBooleanSetting(data, "autoSync", DEFAULT_SETTINGS.autoSync),
 			useDisplayName: readBooleanSetting(data, "useDisplayName", DEFAULT_SETTINGS.useDisplayName),
+			showRibbonSyncButton: readBooleanSetting(data, "showRibbonSyncButton", DEFAULT_SETTINGS.showRibbonSyncButton),
 			debug: readBooleanSetting(data, "debug", DEFAULT_SETTINGS.debug),
 		};
 
@@ -209,6 +207,42 @@ export default class YBRPlugin extends Plugin {
 
 	getActivePairs(): RelationPair[] {
 		return this.settings.pairs.filter(isCompletePair);
+	}
+
+	/** Shared by the command palette, the settings button and the ribbon. */
+	async runFullSync(): Promise<number> {
+		const count = await fullSync(
+			this.app.vault,
+			this.app.metadataCache,
+			this.cache,
+			this.getActivePairs(),
+			this.syncing,
+			this.settings.debug,
+			this.settings.useDisplayName
+		);
+		new Notice(t("notice.syncComplete", String(count)));
+		return count;
+	}
+
+	updateRibbonSyncButton(): void {
+		if (!this.settings.showRibbonSyncButton) {
+			this.removeRibbonSyncButton();
+			return;
+		}
+		if (this.ribbonSyncEl) return;
+
+		this.ribbonSyncEl = this.addRibbonIcon(
+			NODIAN_SYNC_ICON_ID,
+			t("ribbon.syncAll"),
+			() => {
+				void this.runFullSync();
+			}
+		);
+	}
+
+	private removeRibbonSyncButton(): void {
+		this.ribbonSyncEl?.remove();
+		this.ribbonSyncEl = null;
 	}
 
 	/**
@@ -305,10 +339,7 @@ export default class YBRPlugin extends Plugin {
 					await this.app.vault.process(activeFile, (content) => {
 						const split = splitFrontmatter(content);
 						if (split) {
-							const hasTagsField = split.yaml.split("\n").some(
-								(line) => line.startsWith("tags:") || line.startsWith("tags :")
-							);
-							if (!hasTagsField) {
+							if (!yamlHasTagsField(split.yaml)) {
 								return content.replace(
 									/^(---\n)/,
 									`---\ntags:\n  - ${result.sourceTag}\n`
@@ -324,68 +355,68 @@ export default class YBRPlugin extends Plugin {
 				currentTags.push(result.sourceTag);
 			}
 
-			// Only add if this exact pair doesn't already exist
+			const newPair: RelationPair = {
+				fieldA: fieldName,
+				fieldB: counterpartField,
+				tagA: currentTags[0] || "",
+				tagB: result.counterpartTag || counterpartField,
+			};
+
+			// Only add if this exact pair doesn't already exist — a pair is
+			// the same only when both endpoints (tag + field) match; the
+			// two sides may be swapped.
 			const alreadyExists = this.settings.pairs.some(
 				(p) =>
-					(p.fieldA === fieldName && p.fieldB === counterpartField) ||
-					(p.fieldA === counterpartField && p.fieldB === fieldName)
+					(p.fieldA === newPair.fieldA && p.tagA === newPair.tagA &&
+						p.fieldB === newPair.fieldB && p.tagB === newPair.tagB) ||
+					(p.fieldA === newPair.fieldB && p.tagA === newPair.tagB &&
+						p.fieldB === newPair.fieldA && p.tagB === newPair.tagA)
 			);
 			if (!alreadyExists) {
-				this.settings.pairs.push({
-					fieldA: fieldName,
-					fieldB: counterpartField,
-					tagA: currentTags[0] || "",
-					tagB: result.counterpartTag || counterpartField,
-				});
+				this.settings.pairs.push(newPair);
 				await this.saveSettings();
+				new Notice(t("notice.pairCreated", fieldName, counterpartField));
 			}
 
-			new Notice(t("notice.pairCreated", fieldName, counterpartField));
-
-			// Sync backlinks immediately
+			// Sync backlinks immediately — same code path as auto-sync, so
+			// target resolution (tag check + auto-tag) stays consistent.
 			const fm = this.app.metadataCache.getFileCache(activeFile)?.frontmatter;
 			if (fm) {
 				const targets = extractTargets(getFrontmatterValue(fm, fieldName));
-				const sourceDisplay = this.settings.useDisplayName ? this.cache.getDisplayName(activeFile.basename) : null;
-
-				for (const targetName of targets) {
-					const targetFile = this.app.metadataCache.getFirstLinkpathDest(targetName, activeFile.path);
-					if (!targetFile) {
-						new Notice(t("notice.fileNotFound", targetName));
-						continue;
-					}
-
-					const newLink = buildWikilink(activeFile.basename, sourceDisplay);
-					this.syncing.add(targetFile.path);
-					try {
-						await this.app.vault.process(targetFile, (content) => {
-							const yaml = extractYaml(content);
-							const existing = readFieldWikilinks(yaml, counterpartField);
-							if (hasLinkTo(existing, activeFile.basename)) {
-								return content;
-							}
-							const updated = [...existing, newLink];
-							return updateFieldInContent(content, counterpartField, updated);
-						});
-						new Notice(t("notice.backlinkAdded", targetFile.basename, counterpartField, newLink));
-					} finally {
-						window.setTimeout(() => this.syncing.delete(targetFile.path), 500);
-					}
+				if (targets.length > 0) {
+					await applyChanges(
+						[{
+							sourceFile: activeFile.path,
+							sourceFileName: activeFile.basename,
+							fieldName,
+							targetFieldName: counterpartField,
+							added: targets,
+							removed: [],
+							autoTag: newPair.tagB,
+						}],
+						this.app.vault,
+						this.app.metadataCache,
+						this.cache,
+						this.syncing,
+						this.settings.debug,
+						this.settings.useDisplayName
+					);
 				}
 			}
 
 			this.rebuildCache();
 			// Button re-attach no longer needed — using context menu
-		} else if (result.action === "remove" && result.counterpartField) {
-			// Remove a specific pair
-			this.settings.pairs = this.settings.pairs.filter(
-				(p) =>
-					!((p.fieldA === fieldName && p.fieldB === result.counterpartField) ||
-					  (p.fieldA === result.counterpartField && p.fieldB === fieldName))
-			);
-			await this.saveSettings();
-			this.rebuildCache();
-			new Notice(t("notice.pairRemoved", fieldName));
+		} else if (result.action === "remove" && result.pair) {
+			// Remove exactly the clicked pair (object identity). Pairs that
+			// share the same field names under different tags must stay.
+			const removePair = result.pair;
+			const before = this.settings.pairs.length;
+			this.settings.pairs = this.settings.pairs.filter((p) => p !== removePair);
+			if (this.settings.pairs.length !== before) {
+				await this.saveSettings();
+				this.rebuildCache();
+				new Notice(t("notice.pairRemoved", fieldName));
+			}
 			// Button re-attach no longer needed — using context menu
 		}
 	}
@@ -517,6 +548,21 @@ export default class YBRPlugin extends Plugin {
 						);
 						if (!counterpart) continue;
 
+						// Same rule as resolveTargetFile in sync.ts: if this new
+						// file already carries tags, it must carry the pair's
+						// target tag; only untagged files may be initialized
+						// (auto-tag below).
+						const expectedTag = counterpart.pair.fieldA === srcField
+							? counterpart.pair.tagB
+							: counterpart.pair.tagA;
+						const ownTags = getFrontmatterTags(fm);
+						if (
+							ownTags.length > 0 &&
+							!ownTags.some((tg) => tg.toLowerCase() === expectedTag.toLowerCase())
+						) {
+							continue;
+						}
+
 						const yaml = extractYaml(result);
 						const existing = readFieldWikilinks(yaml, counterpart.counterpartField);
 						const srcBasename = srcFile.basename;
@@ -536,19 +582,14 @@ export default class YBRPlugin extends Plugin {
 
 						if (!autoTag) {
 							// Use the pair's target tag instead of the source field name
-							autoTag = counterpart.pair.fieldA === srcField
-								? counterpart.pair.tagB
-								: counterpart.pair.tagA;
+							autoTag = expectedTag;
 						}
 					}
 
 					if (autoTag) {
 						const split = splitFrontmatter(result);
 						if (split) {
-							const hasTagsField = split.yaml.split("\n").some(
-								(line) => line.startsWith("tags:")
-							);
-							if (!hasTagsField) {
+							if (!yamlHasTagsField(split.yaml)) {
 								result = result.replace(
 									/^(---\n)/,
 									`---\ntags:\n  - ${autoTag}\n`

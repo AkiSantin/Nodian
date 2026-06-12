@@ -193,3 +193,12 @@ export function readFieldWikilinks(
 	}
 	return links;
 }
+
+/**
+ * Check whether raw YAML text contains a top-level `tags` field.
+ * Single predicate shared by every auto-tag write site, so all of them
+ * recognize the same spelling variants (e.g. "tags:" and "tags :").
+ */
+export function yamlHasTagsField(yamlString: string): boolean {
+	return yamlString.split("\n").some((line) => /^tags\s*:/.test(line));
+}
