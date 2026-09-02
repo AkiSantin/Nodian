@@ -26,7 +26,6 @@ export class PairSuggestModal extends Modal {
 	private resolve: (result: PairSuggestResult) => void;
 	private counterpartValue: string;
 	private counterpartTagValue: string;
-	private sourceTagValue: string;
 	private cleanupFns: Array<() => void> = [];
 
 	constructor(
@@ -45,7 +44,6 @@ export class PairSuggestModal extends Modal {
 		this.resolve = resolve;
 		this.counterpartValue = fieldName;
 		this.counterpartTagValue = "";
-		this.sourceTagValue = sourceTags[0] || "";
 	}
 
 	onOpen() {
@@ -75,7 +73,9 @@ export class PairSuggestModal extends Modal {
 				const row = contentEl.createDiv({ cls: "ybr-pair-row" + (isActive ? " is-active" : "") });
 				const left = row.createDiv({ cls: "ybr-pair-content" });
 
-				left.createEl("span", { cls: "ybr-tag-badge", text: pair.tagA || "—" });
+				if (pair.tagA) {
+					left.createEl("span", { cls: "ybr-tag-badge", text: pair.tagA });
+				}
 				left.createEl("span", {
 					cls: "ybr-field-name" + (isActive && pair.fieldA === this.fieldName ? " is-active" : ""),
 					text: ` ${pair.fieldA} `,
@@ -85,7 +85,9 @@ export class PairSuggestModal extends Modal {
 					cls: "ybr-field-name" + (isActive && pair.fieldB === this.fieldName ? " is-active" : ""),
 					text: ` ${pair.fieldB} `,
 				});
-				left.createEl("span", { cls: "ybr-tag-badge", text: pair.tagB || "—" });
+				if (pair.tagB) {
+					left.createEl("span", { cls: "ybr-tag-badge", text: pair.tagB });
+				}
 
 				if (isActive) {
 					left.createEl("span", { cls: "ybr-active-badge", text: t("modal.active") });
@@ -100,9 +102,9 @@ export class PairSuggestModal extends Modal {
 			}
 		}
 
-		if (!activePair && this.sourceTags.length > 0) {
+		if (!activePair) {
 			contentEl.createEl("p", {
-				text: t("modal.noPairForTag", this.sourceTags.join(", ")),
+				text: t("modal.noPairForTag", [...this.sourceTags, ""].join(", ")),
 				cls: "ybr-modal-warning",
 			});
 		}
@@ -145,35 +147,15 @@ export class PairSuggestModal extends Modal {
 		});
 		tagCol.createEl("span", { cls: "ybr-select-label", text: t("modal.counterpartTag") });
 
-		if (this.sourceTags.length === 0) {
-			contentEl.createEl("hr");
-			contentEl.createEl("p", {
-				text: t("modal.sourceTag.required"),
-				cls: "ybr-modal-warning",
-			});
-			const sourceTagRow = contentEl.createDiv({ cls: "ybr-add-row" });
-			sourceTagRow.createEl("span", {
-				cls: "ybr-add-label",
-				text: t("modal.sourceTag"),
-			});
-			const sourceCol = sourceTagRow.createDiv({ cls: "ybr-add-col" });
-			this.createCombo(sourceCol, existingTags, t("modal.counterpartTag.placeholder"), (value) => {
-				this.sourceTagValue = value;
-			});
-		}
-
 		contentEl.createEl("hr");
 		const btnRow = contentEl.createDiv({ cls: "ybr-btn-row" });
 		const saveBtn = btnRow.createEl("button", { cls: "mod-cta", text: t("modal.save") });
 		saveBtn.addEventListener("click", () => {
 			if (!this.counterpartValue) return;
-			if (!this.counterpartTagValue) return;
-			if (this.sourceTags.length === 0 && !this.sourceTagValue) return;
 			this.resolve({
 				action: "save",
 				counterpartField: this.counterpartValue,
 				counterpartTag: this.counterpartTagValue,
-				sourceTag: this.sourceTagValue || undefined,
 			});
 			this.close();
 		});

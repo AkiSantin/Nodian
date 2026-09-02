@@ -332,29 +332,6 @@ export default class YBRPlugin extends Plugin {
 		if (result.action === "save" && result.counterpartField) {
 			const counterpartField = result.counterpartField;
 
-			// If modal returned a sourceTag (user entered tag for untagged page), write it to frontmatter
-			if (result.sourceTag) {
-				this.syncing.add(activeFile.path);
-				try {
-					await this.app.vault.process(activeFile, (content) => {
-						const split = splitFrontmatter(content);
-						if (split) {
-							if (!yamlHasTagsField(split.yaml)) {
-								return content.replace(
-									/^(---\n)/,
-									`---\ntags:\n  - ${result.sourceTag}\n`
-								);
-							}
-						}
-						return content;
-					});
-				} finally {
-					window.setTimeout(() => this.syncing.delete(activeFile.path), 500);
-				}
-				// Update currentTags for pair creation below
-				currentTags.push(result.sourceTag);
-			}
-
 			const newPair: RelationPair = {
 				fieldA: fieldName,
 				fieldB: counterpartField,
