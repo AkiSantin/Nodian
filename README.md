@@ -26,7 +26,7 @@ Mail: [[hello@example]]     →     Person: [[Alice]]        ← auto-generated
 
 - **Auto sync** — add or remove a link in one file, the other side updates instantly
 - **Relation pairs** — define which properties are paired (e.g. `Mail ↔ Person`, `Artist ↔ Songs`)
-- **Tag-based matching** — each pair requires tags; sync only fires when both property and tag match
+- **Tag-based matching** — each pair supports tags; when set, sync only fires when both property and tag match
 - **Display names** — optionally use the `title` property as display text in backlinks
 - **New file support** — creating a file from a wikilink auto-adds tags and backlinks
 - **Full sync** — one click from the ribbon icon, settings, or Command Palette
@@ -39,7 +39,7 @@ Nodian can connect different Bases through typed YAML relations.
 
 For example, you can have one Base filtered by `#Person` and another Base filtered by `#Mail`. When a `Person` note links to a `Mail` note through the `Mail` property, Nodian automatically writes the reverse `Person` property in the Mail note.
 
-Because every relation pair requires tags on both sides, the same property name can safely be used in different Bases without triggering the wrong relation.
+Because relation pairs support tags on both sides, the same property name can safely be used in different Bases without triggering the wrong relation.
 
 ---
 
@@ -179,11 +179,11 @@ The desktop layout is unchanged.
 
 ## Tags
 
-Every relation pair has two tags — **Tag A** and **Tag B** — that correspond to Property A and Property B. Tags are **required**, not optional.
+Every relation pair supports two tags — **Tag A** and **Tag B** — that correspond to Property A and Property B. Tags are optional.
 
 ### How tags work
 
-The plugin only syncs when **both** conditions are met:
+When tags are used, the plugin only syncs when **both** conditions are met:
 
 1. The source file has a property that matches a pair's property name
 2. The source file's tag matches that pair's corresponding tag
@@ -203,7 +203,7 @@ Go to Settings → Nodian.
 
 ### Relation pairs
 
-Add, edit, or remove property pairs. Each pair defines two property names and two tags that are bidirectionally linked.
+Add, edit, or remove property pairs. Each pair defines two property names and two optional tags that are bidirectionally linked.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -252,6 +252,7 @@ A company/CRM vault:
 - **Duplicate pairs** (e.g. `A ↔ B` and `B ↔ A`) are redundant — one pair covers both directions.
 - **Duplicate basenames** — files with the same name in different folders may cause incorrect sync targets. Use unique filenames to avoid ambiguity.
 - **System properties** (`title`, `aliases`, `tags`, `cssclasses`, `publish`, etc.) cannot be used as relation properties.
+- **Not using tags** risks wrong-target sync. Take care when leaving tags empty.
 
 ---
 
