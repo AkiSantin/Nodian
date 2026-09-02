@@ -136,10 +136,8 @@ export class YBRSettingTab extends PluginSettingTab {
 					cls: "ybr-settings-input ybr-settings-tag",
 					attr: { type: "text", placeholder: "Tag", value: pair.tagA || "", list: tagListId },
 				});
-				tagAInput.classList.toggle("is-invalid", !pair.tagA);
 				tagAInput.addEventListener("change", () => {
 					this.plugin.settings.pairs[index].tagA = tagAInput.value.trim();
-					tagAInput.classList.toggle("is-invalid", !tagAInput.value.trim());
 					void this.saveSettingsAndRebuild();
 				});
 
@@ -167,10 +165,8 @@ export class YBRSettingTab extends PluginSettingTab {
 					cls: "ybr-settings-input ybr-settings-tag",
 					attr: { type: "text", placeholder: "Tag", value: pair.tagB || "", list: tagListId },
 				});
-				tagBInput.classList.toggle("is-invalid", !pair.tagB);
 				tagBInput.addEventListener("change", () => {
 					this.plugin.settings.pairs[index].tagB = tagBInput.value.trim();
-					tagBInput.classList.toggle("is-invalid", !tagBInput.value.trim());
 					void this.saveSettingsAndRebuild();
 				});
 

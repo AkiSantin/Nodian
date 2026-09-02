@@ -214,17 +214,21 @@ export class RelationCache {
 
 		if (matches.length === 0) return null;
 
-		// If source has tags, find pair with matching tag
-		if (sourceTags && sourceTags.length > 0) {
-			const tagsLower = new Set(sourceTags.map((t) => t.toLowerCase()));
-			for (const match of matches) {
-				const relevantTag = match.matchedSide === "A"
-					? match.pair.tagA
-					: match.pair.tagB;
-				if (relevantTag && tagsLower.has(relevantTag.toLowerCase())) {
-					return { counterpartField: match.counterpartField, pair: match.pair };
-				}
+		// Find pair with matching tag, using tagless matching pair as fallback
+		let taglessCounterpart = null;
+		const tagsLower = new Set(sourceTags?.map((t) => t.toLowerCase()) ?? []);
+		for (const match of matches) {
+			const relevantTag = match.matchedSide === "A"
+				? match.pair.tagA
+				: match.pair.tagB;
+			if (relevantTag === "") {
+				taglessCounterpart = { counterpartField: match.counterpartField, pair: match.pair };
+			} else if (relevantTag && tagsLower.has(relevantTag.toLowerCase())) {
+				return { counterpartField: match.counterpartField, pair: match.pair };
 			}
+		}
+		if (taglessCounterpart) {
+			return taglessCounterpart;
 		}
 
 		// No tag match — do not sync

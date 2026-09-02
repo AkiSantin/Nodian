@@ -24,9 +24,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 export function isCompletePair(pair: RelationPair): boolean {
 	return (
 		pair.fieldA.trim().length > 0 &&
-		pair.fieldB.trim().length > 0 &&
-		pair.tagA.trim().length > 0 &&
-		pair.tagB.trim().length > 0
+		pair.fieldB.trim().length > 0
 	);
 }
 

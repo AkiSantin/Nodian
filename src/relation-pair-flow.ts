@@ -195,7 +195,9 @@ function renderEndpoint(
 	renderEndpointLabel(block, options.labelText, options.labelIcon);
 
 	const value = block.createDiv({ cls: "ybr-endpoint-value" });
-	value.createSpan({ cls: "ybr-endpoint-tag", text: options.tag || "—" });
+	if (options.tag) {
+		value.createSpan({ cls: "ybr-endpoint-tag", text: options.tag });
+	}
 	value.createSpan({
 		cls: `ybr-endpoint-field is-${options.fieldRole}`,
 		text: options.field || "—",
@@ -285,7 +287,6 @@ function addActionButtons(
 export class PropertyRelationModal extends Modal {
 	private counterpartValue = "";
 	private counterpartTagValue = "";
-	private sourceTagValue = "";
 
 	constructor(
 		app: App,
@@ -297,7 +298,6 @@ export class PropertyRelationModal extends Modal {
 		private resolve: (result: PairSuggestResult) => void
 	) {
 		super(app);
-		this.sourceTagValue = sourceTags[0] || "";
 	}
 
 	onOpen(): void {
@@ -353,10 +353,10 @@ export class PropertyRelationModal extends Modal {
 				active: true,
 				onDelete: () => this.removePair(activeView),
 			});
-		} else if (this.sourceTags.length > 0) {
+		} else {
 			this.contentEl.createDiv({
 				cls: "ybr-help-text ybr-warning-text",
-				text: t("modal.noPairForTag", this.sourceTags.join(", ")),
+				text: t("modal.noPairForTag", [...this.sourceTags, ""].join(", ")),
 			});
 		}
 
@@ -387,7 +387,6 @@ export class PropertyRelationModal extends Modal {
 
 		const hasPairs = this.getFieldPairs().length > 0;
 		const currentTag = this.sourceTags[0] || "";
-		this.sourceTagValue = currentTag;
 
 		setModalBackButton(
 			this.modalEl,
@@ -396,34 +395,13 @@ export class PropertyRelationModal extends Modal {
 
 		const card = this.contentEl.createDiv({ cls: "ybr-pair-card ybr-add-card" });
 
-		if (currentTag) {
-			renderEndpoint(card, {
-				labelText: t("modal.currentPageProperty"),
-				labelIcon: "arrow-down-left",
-				tag: currentTag,
-				field: this.fieldName,
-				fieldRole: "source",
-			});
-		} else {
-			// Page has no tag yet (case not drawn in the mockup): keep the
-			// existing semantics — ask for the source tag, main.ts writes it.
-			renderEndpointLabel(card, t("modal.currentPageProperty"), "arrow-down-left");
-			card.createDiv({
-				cls: "ybr-help-text ybr-warning-text",
-				text: t("modal.sourceTag.required"),
-			});
-			addAutocompleteField(card, this.app, {
-				label: t("modal.sourceTag"),
-				value: "",
-				getItems: () => collectExistingTags(this.app),
-				onChange: (value) => {
-					this.sourceTagValue = value;
-					this.refreshSaveState();
-				},
-			});
-			const value = card.createDiv({ cls: "ybr-endpoint-value" });
-			value.createSpan({ cls: "ybr-endpoint-field is-source", text: this.fieldName });
-		}
+		renderEndpoint(card, {
+			labelText: t("modal.currentPageProperty"),
+			labelIcon: "arrow-down-left",
+			tag: currentTag,
+			field: this.fieldName,
+			fieldRole: "source",
+		});
 
 		renderEndpointLabel(card, t("modal.targetProperty"), "arrow-up-right");
 
@@ -450,7 +428,7 @@ export class PropertyRelationModal extends Modal {
 		this.contentEl.createDiv({ cls: "ybr-help-text", text: t("modal.relationHelp") });
 
 		this.saveButton = addActionButtons(this.contentEl, {
-			onSave: () => this.saveNewPair(currentTag),
+			onSave: () => this.saveNewPair(),
 			onCancel: () => {
 				if (hasPairs) {
 					this.renderListView();
@@ -467,8 +445,6 @@ export class PropertyRelationModal extends Modal {
 
 	private canSave(): boolean {
 		if (!this.counterpartValue) return false;
-		if (!this.counterpartTagValue) return false;
-		if (this.sourceTags.length === 0 && !this.sourceTagValue) return false;
 		return true;
 	}
 
@@ -476,7 +452,7 @@ export class PropertyRelationModal extends Modal {
 		this.saveButton?.setDisabled(!this.canSave());
 	}
 
-	private saveNewPair(currentTag: string): void {
+	private saveNewPair(): void {
 		blurActiveTextInput(this.contentEl);
 		if (!this.canSave()) return;
 
@@ -484,7 +460,6 @@ export class PropertyRelationModal extends Modal {
 			action: "save",
 			counterpartField: this.counterpartValue,
 			counterpartTag: this.counterpartTagValue,
-			sourceTag: currentTag ? undefined : this.sourceTagValue,
 		});
 		this.close();
 	}
